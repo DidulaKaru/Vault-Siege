@@ -1,0 +1,37 @@
+{
+  "name": "vault-siege-server",
+  "version": "1.0.0",
+  "description": "Express backend for Vault Siege — state machine, API routes, and puzzle validation",
+  "main": "index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DidulaKaru/26_Com_Welcome.git"
+  },
+  "keywords": [
+    "vault",
+    "siege",
+    "express",
+    "api",
+    "backend",
+    "puzzle"
+  ],
+  "author": "DidulaKaru",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/DidulaKaru/26_Com_Welcome/issues"
+  },
+  "homepage": "https://github.com/DidulaKaru/26_Com_Welcome#readme",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2"
+  }
+}
