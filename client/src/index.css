@@ -2,6 +2,418 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+    font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+    color: #e2e8f0;
+    background: #0b1120;
+    font-synthesis: none;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    background:
+        radial-gradient(circle at 15% 10%, rgba(14, 116, 144, 0.2), transparent 32rem),
+        radial-gradient(circle at 90% 85%, rgba(180, 83, 9, 0.13), transparent 28rem),
+        #0b1120;
+}
+
+button,
+input,
+textarea,
+select {
+    font: inherit;
+}
+
+button {
+    cursor: pointer;
+}
+
+button:disabled {
+    cursor: wait;
+    opacity: 0.55;
+}
+
+.app-shell {
+    min-height: 100vh;
+}
+
+.app-header {
+    align-items: center;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    display: flex;
+    justify-content: space-between;
+    margin: 0 auto;
+    max-width: 1180px;
+    padding: 2rem 2.5rem;
+}
+
+.brand-mark {
+    color: #fbbf24;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.22em;
+}
+
+.header-subtitle,
+.eyebrow {
+    color: #67e8f9;
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.header-subtitle {
+    color: #94a3b8;
+    letter-spacing: 0.08em;
+    margin-top: 0.45rem;
+}
+
+.app-nav,
+.toolbar-actions,
+.row-actions {
+    align-items: center;
+    display: flex;
+    gap: 0.65rem;
+}
+
+.nav-button,
+.quiet-button,
+.danger-button,
+.primary-button {
+    border: 1px solid transparent;
+    border-radius: 0.35rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 0.7rem 1rem;
+    transition: 160ms ease;
+}
+
+.nav-button,
+.quiet-button {
+    background: transparent;
+    color: #94a3b8;
+}
+
+.nav-button:hover,
+.nav-button.active,
+.quiet-button:hover {
+    background: rgba(34, 211, 238, 0.09);
+    border-color: rgba(103, 232, 249, 0.35);
+    color: #cffafe;
+}
+
+.primary-button {
+    background: #0891b2;
+    border-color: #22d3ee;
+    color: #ecfeff;
+}
+
+.primary-button:hover {
+    background: #0e7490;
+}
+
+.danger-button {
+    background: transparent;
+    border-color: rgba(248, 113, 113, 0.35);
+    color: #fca5a5;
+}
+
+.danger-button:hover {
+    background: rgba(127, 29, 29, 0.3);
+}
+
+.app-content {
+    margin: 0 auto;
+    max-width: 1180px;
+    padding: 4rem 2.5rem;
+}
+
+.panel {
+    background: rgba(15, 23, 42, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 0.55rem;
+    box-shadow: 0 1.5rem 4rem rgba(2, 6, 23, 0.28);
+    padding: 2rem;
+}
+
+.join-panel,
+.login-panel {
+    margin: 5vh auto 0;
+    max-width: 540px;
+}
+
+h1,
+h2,
+p {
+    margin-top: 0;
+}
+
+h1 {
+    color: #f8fafc;
+    font-size: clamp(1.8rem, 4vw, 3.3rem);
+    letter-spacing: -0.03em;
+    margin-bottom: 0.7rem;
+}
+
+h2 {
+    color: #f8fafc;
+    font-size: clamp(1.4rem, 3vw, 2.1rem);
+    margin-bottom: 0;
+}
+
+.muted {
+    color: #94a3b8;
+    line-height: 1.65;
+}
+
+.stack-form,
+.modal {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+label {
+    color: #cbd5e1;
+    display: flex;
+    flex-direction: column;
+    font-size: 0.78rem;
+    font-weight: 700;
+    gap: 0.45rem;
+    letter-spacing: 0.04em;
+}
+
+input,
+textarea,
+select {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 0.3rem;
+    color: #f8fafc;
+    outline: none;
+    padding: 0.78rem 0.85rem;
+    width: 100%;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+    border-color: #22d3ee;
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.1);
+}
+
+.hunt-layout,
+.admin-layout {
+    display: grid;
+    gap: 1.25rem;
+}
+
+.team-bar,
+.admin-toolbar,
+.stage-heading {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    gap: 1.5rem;
+}
+
+.team-bar h1,
+.admin-toolbar h1 {
+    font-size: 1.65rem;
+    margin-bottom: 0;
+}
+
+.team-status {
+    border-left: 1px solid rgba(148, 163, 184, 0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding-left: 1.5rem;
+}
+
+.team-status span,
+.type-label {
+    color: #94a3b8;
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.team-status strong {
+    color: #fbbf24;
+    font-size: 1.1rem;
+}
+
+.stage-panel {
+    min-height: 360px;
+}
+
+.prompt-text {
+    color: #cbd5e1;
+    font-size: 1.15rem;
+    line-height: 1.75;
+    margin: 2.5rem 0;
+    max-width: 760px;
+}
+
+.answer-form {
+    border-top: 1px solid rgba(148, 163, 184, 0.16);
+    padding-top: 1.5rem;
+}
+
+.answer-row {
+    align-items: end;
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.answer-row input {
+    flex: 1;
+}
+
+.hint-box {
+    background: rgba(120, 53, 15, 0.2);
+    border-left: 3px solid #f59e0b;
+    color: #fde68a;
+    line-height: 1.6;
+    margin-bottom: 1.7rem;
+    padding: 0.9rem 1rem;
+}
+
+.notice {
+    border-radius: 0.3rem;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    margin: 1rem 0 0;
+    padding: 0.75rem 0.9rem;
+}
+
+.notice.success {
+    background: rgba(22, 101, 52, 0.25);
+    color: #bbf7d0;
+}
+
+.notice.failure,
+.notice.error {
+    background: rgba(127, 29, 29, 0.24);
+    color: #fecaca;
+}
+
+.notice.warning {
+    background: rgba(120, 53, 15, 0.25);
+    color: #fde68a;
+}
+
+.puzzle-table-wrap {
+    overflow-x: auto;
+}
+
+.puzzle-table {
+    min-width: 660px;
+}
+
+.puzzle-row {
+    align-items: center;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 0.5fr 2fr 1.5fr 1.6fr;
+    padding: 1rem 0.35rem;
+}
+
+.puzzle-row:last-child {
+    border-bottom: 0;
+}
+
+.puzzle-header {
+    color: #64748b;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.modal-backdrop {
+    align-items: center;
+    background: rgba(2, 6, 23, 0.75);
+    display: flex;
+    inset: 0;
+    justify-content: center;
+    padding: 1.5rem;
+    position: fixed;
+    z-index: 10;
+}
+
+.modal {
+    max-height: 90vh;
+    max-width: 680px;
+    overflow-y: auto;
+    width: 100%;
+}
+
+.form-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr 2fr;
+}
+
+.completion-state {
+    padding: 3rem 0;
+}
+
+@media (max-width: 700px) {
+    .app-header,
+    .app-content {
+        padding-left: 1.1rem;
+        padding-right: 1.1rem;
+    }
+
+    .app-header,
+    .team-bar,
+    .admin-toolbar,
+    .stage-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .app-header {
+        gap: 1.5rem;
+    }
+
+    .app-content {
+        padding-top: 2rem;
+    }
+
+    .team-status {
+        border-left: 0;
+        border-top: 1px solid rgba(148, 163, 184, 0.2);
+        padding-left: 0;
+        padding-top: 1rem;
+        width: 100%;
+    }
+
+    .answer-row,
+    .toolbar-actions {
+        align-items: stretch;
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 @keyframes slideDown {
     from {
         opacity: 0;
