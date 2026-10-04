@@ -1,6 +1,7 @@
+require('dotenv').config();
 const fs = require('fs/promises');
 const path = require('path');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const pool = require('./index');
 
 const schemaPath = path.join(__dirname, 'schema.sql');

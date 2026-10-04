@@ -32,9 +32,11 @@ CREATE TABLE puzzles (
 CREATE TABLE teams (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     hunt_id UUID NOT NULL REFERENCES hunts(id) ON DELETE CASCADE,
+    access_code VARCHAR(120) NOT NULL,
     team_name VARCHAR(60) NOT NULL,
     current_stage_order INT NOT NULL DEFAULT 1,
     is_completed BOOLEAN DEFAULT false,
     updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uq_hunt_access_code UNIQUE(hunt_id, access_code),
     CONSTRAINT uq_hunt_team UNIQUE(hunt_id, team_name)
 );

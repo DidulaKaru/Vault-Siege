@@ -1,10 +1,10 @@
 const express = require('express');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const pool = require('../db');
-const { authenticateToken, issueToken } = require('../middleware/auth');
+const { requireAdmin, issueToken } = require('../middleware/auth');
 
 const router = express.Router();
-const authenticateAdmin = authenticateToken('admin');
+const authenticateAdmin = requireAdmin;
 const validatorTypes = new Set(['EXACT_MATCH', 'CASE_INSENSITIVE', 'REGEX', 'HASH_SHA256']);
 
 router.post('/login', async (req, res) => {
@@ -24,7 +24,7 @@ router.post('/login', async (req, res) => {
         }
 
         return res.json({
-            token: issueToken({ type: 'admin', sub: admin.id, username: admin.username })
+            token: issueToken({ adminId: admin.id, role: 'admin', sub: admin.id, username: admin.username })
         });
     } catch (error) {
         return res.status(500).json({ message: 'Failed to authenticate administrator.' });

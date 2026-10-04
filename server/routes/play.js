@@ -1,10 +1,44 @@
 const express = require('express');
 const pool = require('../db');
-const { authenticateToken, issueToken } = require('../middleware/auth');
+const { requireTeam, issueToken } = require('../middleware/auth');
 const { validateSubmission } = require('../services/validator');
 
 const router = express.Router();
-const authenticateTeam = authenticateToken('team');
+const authenticateTeam = requireTeam;
+
+router.post('/login', async (req, res) => {
+    const { access_code: accessCode } = req.body;
+    if (typeof accessCode !== 'string' || !accessCode.trim()) {
+        return res.status(400).json({ message: 'access_code is required.' });
+    }
+
+    try {
+        const result = await pool.query(
+            `SELECT t.id, t.hunt_id, t.team_name, t.current_stage_order, t.is_completed
+             FROM teams t
+             JOIN hunts h ON h.id = t.hunt_id
+             WHERE t.access_code = $1 AND h.is_active = true`,
+            [accessCode.trim()]
+        );
+        if (result.rowCount === 0) {
+            return res.status(401).json({ message: 'Invalid access code.' });
+        }
+
+        const team = result.rows[0];
+        const token = issueToken({ teamId: team.id, huntId: team.hunt_id, role: 'team' });
+        return res.json({
+            token,
+            sessionToken: token,
+            teamId: team.id,
+            huntId: team.hunt_id,
+            teamName: team.team_name,
+            currentStageOrder: team.current_stage_order,
+            completed: team.is_completed
+        });
+    } catch (error) {
+        return res.status(500).json({ message: 'Failed to authenticate team.' });
+    }
+});
 
 router.post('/join', async (req, res) => {
     const { huntId, teamName } = req.body;
@@ -23,15 +57,15 @@ router.post('/join', async (req, res) => {
         }
 
         const teamResult = await pool.query(
-            `INSERT INTO teams (hunt_id, team_name)
-             VALUES ($1, $2)
+            `INSERT INTO teams (hunt_id, access_code, team_name)
+             VALUES ($1, $2, $2)
              ON CONFLICT (hunt_id, team_name) DO UPDATE SET updated_at = NOW()
              RETURNING id, hunt_id, team_name, current_stage_order, is_completed`,
             [huntId, teamName.trim()]
         );
         const team = teamResult.rows[0];
         const sessionToken = issueToken({
-            type: 'team',
+            role: 'team',
             sub: team.id,
             huntId: team.hunt_id
         });
@@ -52,12 +86,12 @@ router.post('/join', async (req, res) => {
 router.get('/stage', authenticateTeam, async (req, res) => {
     try {
         const result = await pool.query(
-            `SELECT p.id, p.stage_order, p.title, p.prompt_text, p.hint_text
+            `SELECT p.stage_order, p.title, p.prompt_text, p.hint_text
              FROM teams t
              JOIN puzzles p ON p.hunt_id = t.hunt_id
                 AND p.stage_order = t.current_stage_order
              WHERE t.id = $1 AND t.hunt_id = $2`,
-            [req.auth.sub, req.auth.huntId]
+            [req.auth.teamId || req.auth.sub, req.auth.huntId]
         );
 
         if (result.rowCount === 0) {
@@ -86,7 +120,7 @@ router.post('/submit', authenticateTeam, async (req, res) => {
                 AND p.stage_order = t.current_stage_order
              WHERE t.id = $1 AND t.hunt_id = $2
              FOR UPDATE OF t`,
-            [req.auth.sub, req.auth.huntId]
+            [req.auth.teamId || req.auth.sub, req.auth.huntId]
         );
 
         if (puzzleResult.rowCount === 0) {
@@ -106,7 +140,7 @@ router.post('/submit', authenticateTeam, async (req, res) => {
              JOIN puzzles p ON p.hunt_id = t.hunt_id
                 AND p.stage_order = t.current_stage_order + 1
              WHERE t.id = $1`,
-            [req.auth.sub]
+            [req.auth.teamId || req.auth.sub]
         );
         const completed = nextStageResult.rowCount === 0;
 
@@ -116,7 +150,7 @@ router.post('/submit', authenticateTeam, async (req, res) => {
                  is_completed = $2,
                  updated_at = NOW()
              WHERE id = $1`,
-            [req.auth.sub, completed]
+            [req.auth.teamId || req.auth.sub, completed]
         );
         await client.query('COMMIT');
 

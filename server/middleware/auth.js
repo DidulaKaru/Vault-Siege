@@ -19,7 +19,7 @@ function authenticateToken(expectedType) {
 
         try {
             const payload = jwt.verify(token, JWT_SECRET);
-            if (payload.type !== expectedType) {
+            if (payload.role !== expectedType) {
                 return res.status(403).json({ message: 'Invalid authorization scope.' });
             }
 
@@ -31,4 +31,7 @@ function authenticateToken(expectedType) {
     };
 }
 
-module.exports = { authenticateToken, issueToken };
+const requireAdmin = authenticateToken('admin');
+const requireTeam = authenticateToken('team');
+
+module.exports = { authenticateToken, issueToken, requireAdmin, requireTeam };

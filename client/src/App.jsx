@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import AdminPanel from './components/AdminPanel';
-import TeamHuntView from './components/TeamHuntView';
+import PlayView from './components/PlayView';
 
 export default function App() {
     const [view, setView] = useState(() => window.location.pathname === '/admin' ? 'admin' : 'hunt');
@@ -30,7 +30,7 @@ export default function App() {
                 </nav>
             </header>
             <main className="app-content">
-                {view === 'admin' ? <AdminPanel /> : <TeamHuntView />}
+                {view === 'admin' ? <AdminPanel /> : <PlayView />}
             </main>
         </div>
     );

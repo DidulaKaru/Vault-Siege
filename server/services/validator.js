@@ -17,7 +17,7 @@ function validateSubmission(submission, validatorType, target) {
         case 'EXACT_MATCH':
             return timingSafeStringEqual(submission, target);
         case 'CASE_INSENSITIVE':
-            return timingSafeStringEqual(submission.toLowerCase(), target.toLowerCase());
+            return timingSafeStringEqual(submission.trim().toLowerCase(), target.trim().toLowerCase());
         case 'REGEX':
             try {
                 return new RegExp(target).test(submission);
@@ -25,7 +25,8 @@ function validateSubmission(submission, validatorType, target) {
                 return false;
             }
         case 'HASH_SHA256': {
-            const actualHash = crypto.createHash('sha256').update(submission, 'utf8').digest();
+            const actualHash = crypto.createHash('sha256').update(submission.trim(), 'utf8').digest();
+            if (!/^[a-f0-9]{64}$/i.test(target)) return false;
             const expectedHash = Buffer.from(target, 'hex');
 
             return expectedHash.length === actualHash.length

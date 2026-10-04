@@ -31,7 +31,7 @@
   },
   "homepage": "https://github.com/DidulaKaru/26_Com_Welcome#readme",
   "dependencies": {
-    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^18.0.4",
     "express": "^5.2.1",
