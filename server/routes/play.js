@@ -105,7 +105,7 @@ router.get('/stage', authenticateTeam, async (req, res) => {
 });
 
 router.post('/submit', authenticateTeam, async (req, res) => {
-    const submission = req.body.submission ?? req.body.input;
+    const submission = req.body.submission ?? req.body.answer ?? req.body.input;
     if (typeof submission !== 'string') {
         return res.status(400).json({ message: 'submission must be a string.' });
     }

@@ -14,12 +14,16 @@ const emptyPuzzle = {
     validation_target: ''
 };
 
-async function fetchPuzzles(token, huntId) {
-    const response = await fetch(`${API_BASE}/api/v1/admin/puzzles?huntId=${encodeURIComponent(huntId)}`, {
+async function fetchPuzzles(token) {
+    const response = await fetch(`${API_BASE}/api/v1/admin/puzzles`, {
         headers: { Authorization: `Bearer ${token}` }
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Unable to load puzzles.');
+    if (!response.ok) {
+        const error = new Error(data.message || 'Unable to load puzzles.');
+        error.response = { data };
+        throw error;
+    }
     return data;
 }
 
@@ -27,7 +31,7 @@ export default function AdminPanel() {
     const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
     const [username, setUsername] = useState('admin');
     const [password, setPassword] = useState('');
-    const [huntId, setHuntId] = useState(import.meta.env.VITE_HUNT_ID || '');
+    const [huntId, setHuntId] = useState('');
     const [puzzles, setPuzzles] = useState([]);
     const [form, setForm] = useState(emptyPuzzle);
     const [modalOpen, setModalOpen] = useState(false);
@@ -36,15 +40,18 @@ export default function AdminPanel() {
     const [message, setMessage] = useState('');
 
     useEffect(() => {
-        if (!token || !huntId) return;
+        if (!token) return;
 
         let cancelled = false;
-        fetchPuzzles(token, huntId)
+        fetchPuzzles(token)
             .then((data) => {
-                if (!cancelled) setPuzzles(data);
+                if (!cancelled) {
+                    setPuzzles(data);
+                    if (data[0]?.hunt_id) setHuntId(data[0].hunt_id);
+                }
             })
             .catch((requestError) => {
-                if (!cancelled) setError(requestError.message);
+                if (!cancelled) setError(requestError.response?.data?.message || requestError.message);
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);
@@ -53,7 +60,7 @@ export default function AdminPanel() {
         return () => {
             cancelled = true;
         };
-    }, [token, huntId]);
+    }, [token]);
 
     const login = async (event) => {
         event.preventDefault();
@@ -84,7 +91,8 @@ export default function AdminPanel() {
     };
 
     const openCreate = () => {
-        setForm({ ...emptyPuzzle, hunt_id: huntId });
+        const nextStageOrder = puzzles.length + 1;
+        setForm({ ...emptyPuzzle, hunt_id: huntId, stage_order: nextStageOrder });
         setMessage('');
         setError('');
         setModalOpen(true);
@@ -126,12 +134,16 @@ export default function AdminPanel() {
                 }
             );
             const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Unable to save puzzle.');
+            if (!response.ok) {
+                const error = new Error(data.message || 'Unable to save puzzle.');
+                error.response = { data };
+                throw error;
+            }
             setModalOpen(false);
             setMessage(isEditing ? 'Puzzle updated.' : 'Puzzle added.');
-            setPuzzles(await fetchPuzzles(token, huntId));
+            setPuzzles(await fetchPuzzles(token));
         } catch (requestError) {
-            setError(requestError.message);
+            setError(requestError.response?.data?.message || requestError.message);
         } finally {
             setLoading(false);
         }
@@ -149,7 +161,7 @@ export default function AdminPanel() {
             const data = response.status === 204 ? null : await response.json();
             if (!response.ok) throw new Error(data?.message || 'Unable to delete puzzle.');
             setMessage('Puzzle deleted.');
-            setPuzzles(await fetchPuzzles(token, huntId));
+            setPuzzles(await fetchPuzzles(token));
         } catch (requestError) {
             setError(requestError.message);
         } finally {
@@ -187,18 +199,16 @@ export default function AdminPanel() {
                     <h1>Puzzle stages</h1>
                 </div>
                 <div className="toolbar-actions">
-                    <input value={huntId} onChange={(event) => setHuntId(event.target.value)} placeholder="Hunt UUID" aria-label="Hunt ID" />
-                    <button className="primary-button" onClick={openCreate} disabled={!huntId} type="button">Add puzzle</button>
+                    <button className="primary-button" onClick={openCreate} type="button">Add puzzle</button>
                     <button className="quiet-button" onClick={logout} type="button">Sign out</button>
                 </div>
             </div>
 
             {error && <p className="notice error">{error}</p>}
             {message && <p className="notice success">{message}</p>}
-            {!huntId && <p className="notice warning">Enter a hunt ID to load its stages.</p>}
             <div className="panel puzzle-table-wrap">
                 {loading && <p className="muted">Working...</p>}
-                {!loading && puzzles.length === 0 && huntId && <p className="muted">No puzzles in this hunt yet.</p>}
+                {!loading && puzzles.length === 0 && <p className="muted">No puzzles in the active hunt yet.</p>}
                 {puzzles.length > 0 && (
                     <div className="puzzle-table">
                         <div className="puzzle-row puzzle-header">

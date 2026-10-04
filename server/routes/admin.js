@@ -34,16 +34,18 @@ router.post('/login', async (req, res) => {
 router.use(authenticateAdmin);
 
 router.get('/puzzles', async (req, res) => {
-    const { huntId } = req.query;
-    if (!huntId) return res.status(400).json({ message: 'huntId is required.' });
-
     try {
+        const huntId = req.query.hunt_id || (await pool.query(
+            'SELECT id FROM hunts WHERE is_active = true LIMIT 1'
+        )).rows[0]?.id;
+        if (!huntId) return res.status(404).json({ message: 'No active hunt found.' });
+
         const result = await pool.query(
             `SELECT id, hunt_id, stage_order, title, prompt_text, hint_text,
                     validator_type, validation_target
              FROM puzzles
              WHERE hunt_id = $1
-             ORDER BY stage_order`,
+             ORDER BY stage_order ASC`,
             [huntId]
         );
         return res.json(result.rows);
@@ -53,12 +55,59 @@ router.get('/puzzles', async (req, res) => {
 });
 
 router.post('/puzzles', async (req, res) => {
-    const puzzle = req.body;
-    if (!isValidPuzzleInput(puzzle)) {
-        return res.status(400).json({ message: 'Invalid puzzle fields.' });
+    const puzzle = {
+        ...req.body,
+        validator_type: typeof req.body?.validator_type === 'string'
+            ? req.body.validator_type.toUpperCase()
+            : req.body?.validator_type
+    };
+
+    try {
+        const huntId = typeof puzzle.hunt_id === 'string' ? puzzle.hunt_id.trim() : puzzle.hunt_id;
+        const activeHunt = await pool.query('SELECT id FROM hunts WHERE is_active = true LIMIT 1');
+        const targetHuntId = !huntId ? activeHunt.rows[0]?.id : huntId;
+        puzzle.hunt_id = targetHuntId;
+    } catch (error) {
+        console.error('Failed to create puzzle:', error);
+        return res.status(500).json({ message: 'Failed to create puzzle.' });
+    }
+
+    const missingFields = ['title', 'prompt_text', 'validation_target']
+        .filter((field) => puzzle[field] === undefined || puzzle[field] === null || puzzle[field] === '');
+    if (missingFields.length > 0) {
+        return res.status(400).json({
+            message: 'Required puzzle fields are missing.',
+            details: { missing: missingFields }
+        });
+    }
+    if (!puzzle.hunt_id) {
+        return res.status(400).json({ message: 'No active hunt found.' });
     }
 
     try {
+        const requestedStageOrder = puzzle.stage_order;
+        const stageOrderIsValid = Number.isInteger(requestedStageOrder) && requestedStageOrder > 0;
+        const stageConflict = stageOrderIsValid && await pool.query(
+            'SELECT 1 FROM puzzles WHERE hunt_id = $1 AND stage_order = $2 LIMIT 1',
+            [puzzle.hunt_id, requestedStageOrder]
+        );
+        if (!stageOrderIsValid || stageConflict.rowCount > 0) {
+            const nextStage = await pool.query(
+                'SELECT COALESCE(MAX(stage_order), 0) + 1 AS next_stage_order FROM puzzles WHERE hunt_id = $1',
+                [puzzle.hunt_id]
+            );
+            puzzle.stage_order = nextStage.rows[0].next_stage_order;
+        }
+        if (!isValidPuzzleInput(puzzle)) {
+            return res.status(400).json({
+                message: 'Invalid puzzle fields.',
+                details: {
+                    stage_order: 'stage_order must be a positive integer.',
+                    validator_type: `validator_type must be one of ${[...validatorTypes].join(', ')}.`
+                }
+            });
+        }
+
         const result = await pool.query(
             `INSERT INTO puzzles
                 (hunt_id, stage_order, title, prompt_text, hint_text, validator_type, validation_target)
@@ -68,8 +117,9 @@ router.post('/puzzles', async (req, res) => {
             toPuzzleValues(puzzle)
         );
         return res.status(201).json(result.rows[0]);
-    } catch (error) {
-        return respondToPuzzleError(res, error, 'Failed to create puzzle.');
+    } catch (err) {
+        console.error('Failed to create puzzle:', err);
+        return respondToPuzzleError(res, err, 'Failed to create puzzle.');
     }
 });
 

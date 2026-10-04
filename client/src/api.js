@@ -34,7 +34,11 @@ export const playApi = {
 
 export const adminApi = {
     login: (username, password) => jsonRequest('/api/v1/admin/login', 'POST', { username, password }, ADMIN_TOKEN_KEY),
-    puzzles: (huntId) => request(`/api/v1/admin/puzzles?huntId=${encodeURIComponent(huntId)}`, {}, ADMIN_TOKEN_KEY),
+    puzzles: (huntId) => request(
+        huntId ? `/api/v1/admin/puzzles?hunt_id=${encodeURIComponent(huntId)}` : '/api/v1/admin/puzzles',
+        {},
+        ADMIN_TOKEN_KEY
+    ),
     createPuzzle: (puzzle) => jsonRequest('/api/v1/admin/puzzles', 'POST', puzzle, ADMIN_TOKEN_KEY),
     updatePuzzle: (id, puzzle) => jsonRequest(`/api/v1/admin/puzzles/${id}`, 'PUT', puzzle, ADMIN_TOKEN_KEY),
     deletePuzzle: (id) => request(`/api/v1/admin/puzzles/${id}`, { method: 'DELETE' }, ADMIN_TOKEN_KEY)

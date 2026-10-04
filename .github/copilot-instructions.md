@@ -1,14 +1,16 @@
-# Engineering Instructions for Treasure Hunt Platform
+# Copilot Development Instructions: Hunter Gate Platform
 
-## Tech Stack
-- Frontend: React (Vite), Tailwind CSS
-- Backend: Node.js, Express
-- Database: PostgreSQL (using `pg` driver or Prisma/Knex)
+## System Architecture
+- Multi-tenant treasure hunt engine. All puzzles follow a universal prompt-validator contract.
+- Backend: Express + PostgreSQL (`pg` driver with connection pooling).
+- Frontend: React + Vite + Tailwind CSS v4.
+- Theme: Solo Leveling "System UI" (deep blacks `#030712`, neon cyan `#00f0ff` / `#38bdf8`, monospace, glowing borders).
 
-## Architecture Rules
-1. Universal Puzzle Contract: Every puzzle is defined by:
-   - `id`, `stage_order`, `title`, `prompt_text`, `hint_text`
-   - `validator_type` ('EXACT_MATCH', 'CASE_INSENSITIVE', 'REGEX', 'HASH_SHA256')
-   - `validation_target` (Expected answer or hash)
-2. Zero Solution Leakage: Never return `validator_type` or `validation_target` to `/api/v1/play/*` routes.
-3. Decoupling: Remove all legacy siege pinging, IP maps, Morse, and hardcoded config polling.
+## Mandatory Constraints
+1. **Never Leak Validation Details:** Under no circumstances should `validator_type` or `validation_target` be serialized or returned in any `/api/v1/play/*` response.
+2. **Team State Isolation:** Team stage progression is strictly tracked in the `teams` table via `current_stage_order`. All puzzle answers must advance only the submitting team.
+3. **Database Defaults:** When `hunt_id` is omitted in admin requests, always resolve the active hunt via `SELECT id FROM hunts WHERE is_active = true LIMIT 1`.
+4. **Enum Matching:** PostgreSQL enum `validation_strategy` requires uppercase: `'EXACT_MATCH'`, `'CASE_INSENSITIVE'`, `'REGEX'`, `'HASH_SHA256'`. Ensure backend routes always uppercase input before insertion.
+5. **Team Auth:** Team authentication is handled via `access_code` on the `teams` table.
+6. **Universal Puzzle Contract:** Every puzzle includes `id`, `stage_order`, `title`, `prompt_text`, `hint_text`, `validator_type`, and `validation_target`.
+7. **Decoupling:** Do not reintroduce legacy siege pinging, IP maps, Morse logic, or hardcoded configuration polling.

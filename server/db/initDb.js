@@ -71,6 +71,14 @@ async function seedDatabase(client) {
         );
     }
 
+    await client.query(
+        `INSERT INTO teams (hunt_id, team_name, access_code)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (hunt_id, access_code) DO NOTHING`,
+        [huntId, 'Shadow Monarchs', 'HUNTER-001']
+    );
+    console.log('Seeded team "Shadow Monarchs" with access code HUNTER-001');
+
     return { adminId: adminResult.rows[0].id, huntId, puzzleCount: puzzles.length };
 }
 
