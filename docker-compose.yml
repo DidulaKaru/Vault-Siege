@@ -1,0 +1,111 @@
+name: vault-siege
+
+# The application source is unchanged. The original server requires a DATABASE_URL
+# and must run with NODE_ENV != production to avoid forcing SSL on local Postgres.
+x-app-db: &app-db
+  DATABASE_URL: "postgresql://${POSTGRES_USER:?Set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:?Set POSTGRES_DB in .env}"
+  NODE_ENV: development
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  # Original db/initDb.js creates unguarded tables/types and seeds a default admin.
+  # Only execute it for a new database. Override the seeded admin's hardcoded
+  # password with ADMIN_PASSWORD, without editing application source files.
+  db-init:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: "no"
+    environment:
+      <<: *app-db
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        if node -e '
+          const pool = require("./db");
+          pool.query("SELECT to_regclass($$1) AS table_name", ["public.admins"])
+            .then(result => { if (!result.rows[0].table_name) process.exitCode = 2; })
+            .catch(error => { console.error(error); process.exitCode = 1; })
+            .finally(() => pool.end());
+        '; then
+          echo 'Existing database found: preserving existing hunts and puzzles.'
+        else
+          echo 'Initializing database with original db/initDb.js ...'
+          node db/initDb.js
+        fi
+        node -e '
+          const pool = require("./db");
+          const bcrypt = require("bcryptjs");
+          (async () => {
+            const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 12);
+            const result = await pool.query(
+              "UPDATE admins SET password_hash = $$1 WHERE username = $$2",
+              [hash, "admin"]
+            );
+            if (result.rowCount !== 1) throw new Error("Seed admin account not found");
+            console.log("Configured admin password from ADMIN_PASSWORD.");
+          })().catch(error => { console.error(error); process.exitCode = 1; })
+            .finally(() => pool.end());
+        '
+
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-db
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      PORT: "5000"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    healthcheck:
+      # The original Express app has no /health route; HTTP 404 on / proves
+      # the server is accepting requests (a 5xx response is unhealthy).
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:5000/', response => process.exit(response.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        # Vite injects this value at image BUILD time (rebuild after changing it).
+        VITE_API_URL: ${VITE_API_URL:?Set VITE_API_URL in .env}
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
