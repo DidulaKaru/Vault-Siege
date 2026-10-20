@@ -72,6 +72,8 @@ services:
       context: ./server
       dockerfile: Dockerfile
     restart: unless-stopped
+    ports:
+      - "5000:5000"
     environment:
       <<: *app-db
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
