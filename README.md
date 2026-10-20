@@ -225,15 +225,41 @@ Open:
 
 ---
 
-## 6. Future Project Roadmap (DevOps)
+## 6. Project Progress and Roadmap
 
-Once the core web application and administration workflows are verified, the
-next milestone focuses on containerization and deployment pipelines:
+The core application and Docker deployment configuration are implemented.
+The checklist reflects the current source and configuration; end-to-end
+runtime verification remains pending.
 
+### Application
+
+- [x] PostgreSQL schema and seed data for hunts, admins, puzzles, and teams.
+- [x] Team access-code login, JWT authentication, isolated progression, and
+  completion tracking.
+- [x] Server-side answer validation with all four validator strategies and
+  public-only puzzle fields in player responses.
+- [x] Architect login and puzzle creation, listing, editing, and deletion.
+- [x] Hunter and Architect interfaces at `/` and `/admin`.
+
+### Containerization and DevOps
+
+- [x] Express backend Dockerfile with production dependencies and a non-root
+  runtime user (currently a single-stage build).
+- [x] Multi-stage React frontend Dockerfile with Nginx static asset hosting
+  and `/api/` proxying to the backend.
+- [x] Unified `docker-compose.yml` with PostgreSQL 16, persistent database
+  storage, service health checks, ordered startup, and frontend ingress.
+- [x] One-shot database initialization that skips schema seeding when the
+  `admins` table exists and configures the admin password from `ADMIN_PASSWORD`.
+- [x] Root environment template (`.env..example`) and build-time frontend
+  API URL configuration through `VITE_API_URL`.
 - [ ] Multi-stage production Dockerfile for the Express backend.
-- [ ] Multi-stage Dockerfile and Nginx static asset hosting for the React
-  frontend.
-- [ ] Unified `docker-compose.yml` orchestrating PostgreSQL with health checks
-  and volume mounts, the backend, and ingress.
 - [ ] CI/CD configuration for automated linting, schema validation, and image
   builds.
+- [ ] End-to-end verification of the Compose stack, player progression,
+  admin workflows, and persistence across container restarts.
+
+The Compose stack currently sets `NODE_ENV=development` because the database
+client forces SSL in production mode, while the local PostgreSQL container
+uses a non-SSL connection. Production deployment still needs database SSL
+configuration appropriate to the target environment.
