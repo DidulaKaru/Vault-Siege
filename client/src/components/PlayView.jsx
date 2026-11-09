@@ -1,13 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PLAY_TOKEN_KEY, playApi } from '../api';
-
-function loadPlayer() {
-    try {
-        return JSON.parse(localStorage.getItem('vault-siege-team-session') || 'null');
-    } catch {
-        return null;
-    }
-}
+import { loadPlayer, savePlayer } from '../playerSession';
 
 export default function PlayView() {
     const [player, setPlayer] = useState(loadPlayer);
@@ -26,16 +19,23 @@ export default function PlayView() {
         setStage(null);
         setFeedback(null);
         setError('');
+        setAnswer('');
+        setHintOpen(false);
     };
 
     useEffect(() => {
-        if (!localStorage.getItem(PLAY_TOKEN_KEY)) return undefined;
+        if (!player || player.completed || !localStorage.getItem(PLAY_TOKEN_KEY)) return undefined;
 
         let cancelled = false;
         playApi.stage()
             .then((nextStage) => {
                 if (!cancelled) {
-                    setStage(nextStage);
+                    if (nextStage.completed) {
+                        const session = { ...player, completed: true };
+                        savePlayer(session);
+                        setPlayer(session);
+                        setStage(null);
+                    } else setStage(nextStage);
                     setError('');
                 }
             })
@@ -61,7 +61,7 @@ export default function PlayView() {
         try {
             const session = await playApi.login(accessCode.trim());
             localStorage.setItem(PLAY_TOKEN_KEY, session.token || session.sessionToken);
-            localStorage.setItem('vault-siege-team-session', JSON.stringify(session));
+            savePlayer(session);
             setPlayer(session);
             setAccessCode('');
         } catch (requestError) {
@@ -79,20 +79,30 @@ export default function PlayView() {
         setFeedback(null);
         setError('');
         try {
-            const result = await playApi.submit(answer);
+            const result = await playApi.submit(answer, stage?.stage_order);
             if (!result.success) {
                 setFeedback({ type: 'failure', message: 'Incorrect answer, try again.' });
                 return;
             }
 
             if (result.completed) {
-                setPlayer((current) => ({ ...current, completed: true }));
+                const session = { ...player, completed: true, currentStageOrder: result.currentStageOrder };
+                savePlayer(session);
+                setPlayer(session);
                 setStage(null);
                 setAnswer('');
                 return;
             }
 
             const nextStage = await playApi.stage();
+            if (nextStage.completed) {
+                const session = { ...player, completed: true };
+                savePlayer(session);
+                setPlayer(session);
+                setStage(null);
+                return;
+            }
+            savePlayer({ ...player, currentStageOrder: nextStage.stage_order });
             setStage(nextStage);
             setAnswer('');
             setHintOpen(false);
@@ -137,7 +147,7 @@ export default function PlayView() {
                 <div className="eyebrow">Vault opened</div>
                 <h1>Hunt Completed</h1>
                 <p className="muted">Your team cleared every stage. The vault recognizes your work.</p>
-                <button className="quiet-button" onClick={signOut} type="button">Switch team</button>
+                <button className="quiet-button" disabled={loading} onClick={signOut} type="button">Switch team</button>
             </section>
         );
     }
@@ -153,7 +163,7 @@ export default function PlayView() {
                     <span>Stage</span>
                     <strong>{stage?.stage_order || player.currentStageOrder || '...'}</strong>
                 </div>
-                <button className="quiet-button" onClick={signOut} type="button">Switch team</button>
+                <button className="quiet-button" disabled={loading} onClick={signOut} type="button">Switch team</button>
             </div>
 
             <div className="panel stage-panel">

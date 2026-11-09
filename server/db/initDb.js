@@ -7,12 +7,11 @@ const pool = require('./index');
 const schemaPath = path.join(__dirname, 'schema.sql');
 
 async function seedDatabase(client) {
-    const passwordHash = await bcrypt.hash('password123', 10);
+    const passwordHash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 12);
     const adminResult = await client.query(
         `INSERT INTO admins (username, password_hash)
          VALUES ($1, $2)
-         ON CONFLICT (username) DO UPDATE
-         SET password_hash = EXCLUDED.password_hash
+         ON CONFLICT (username) DO NOTHING
          RETURNING id`,
         ['admin', passwordHash]
     );
@@ -79,15 +78,26 @@ async function seedDatabase(client) {
     );
     console.log('Seeded team "Shadow Monarchs" with access code HUNTER-001');
 
-    return { adminId: adminResult.rows[0].id, huntId, puzzleCount: puzzles.length };
+    return { adminId: adminResult.rows[0]?.id, huntId, puzzleCount: puzzles.length };
 }
 
 async function initDatabase() {
+    if (!process.env.ADMIN_PASSWORD) throw new Error('ADMIN_PASSWORD must be set.');
     const schema = await fs.readFile(schemaPath, 'utf8');
     const client = await pool.connect();
 
     try {
         await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(7429301)');
+        const { rows: [state] } = await client.query(
+            "SELECT to_regclass('public.admins') AS admins, to_regclass('public.hunts') AS hunts, to_regclass('public.puzzles') AS puzzles, to_regclass('public.teams') AS teams, to_regtype('public.validation_strategy') AS strategy"
+        );
+        if (Object.values(state).every(Boolean)) {
+            await client.query('COMMIT');
+            console.log('Existing database found: preserving accounts, puzzles and progress.');
+            return;
+        }
+        if (Object.values(state).some(Boolean)) throw new Error('Partial database schema found; initialization stopped to preserve data.');
         await client.query(schema);
         const seed = await seedDatabase(client);
         await client.query('COMMIT');

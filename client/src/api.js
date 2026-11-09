@@ -29,7 +29,7 @@ function jsonRequest(path, method, body, tokenKey) {
 export const playApi = {
     login: (accessCode) => jsonRequest('/api/v1/play/login', 'POST', { access_code: accessCode }, PLAY_TOKEN_KEY),
     stage: () => request('/api/v1/play/stage', {}, PLAY_TOKEN_KEY),
-    submit: (submission) => jsonRequest('/api/v1/play/submit', 'POST', { submission }, PLAY_TOKEN_KEY)
+    submit: (submission, stageOrder) => jsonRequest('/api/v1/play/submit', 'POST', { submission, stage_order: stageOrder }, PLAY_TOKEN_KEY)
 };
 
 export const adminApi = {

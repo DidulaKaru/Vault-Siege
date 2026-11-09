@@ -8,8 +8,8 @@ const authenticateAdmin = requireAdmin;
 const validatorTypes = new Set(['EXACT_MATCH', 'CASE_INSENSITIVE', 'REGEX', 'HASH_SHA256']);
 
 router.post('/login', async (req, res) => {
-    const { username, password } = req.body;
-    if (typeof username !== 'string' || typeof password !== 'string') {
+    const { username, password } = req.body || {};
+    if (typeof username !== 'string' || typeof password !== 'string' || !username.trim() || !password) {
         return res.status(400).json({ message: 'username and password are required.' });
     }
 
@@ -50,7 +50,7 @@ router.get('/puzzles', async (req, res) => {
         );
         return res.json(result.rows);
     } catch (error) {
-        return res.status(500).json({ message: 'Failed to load puzzles.' });
+        return respondToPuzzleError(res, error, 'Failed to load puzzles.');
     }
 });
 
@@ -87,16 +87,14 @@ router.post('/puzzles', async (req, res) => {
     try {
         const requestedStageOrder = puzzle.stage_order;
         const stageOrderIsValid = Number.isInteger(requestedStageOrder) && requestedStageOrder > 0;
-        const stageConflict = stageOrderIsValid && await pool.query(
-            'SELECT 1 FROM puzzles WHERE hunt_id = $1 AND stage_order = $2 LIMIT 1',
-            [puzzle.hunt_id, requestedStageOrder]
-        );
-        if (!stageOrderIsValid || stageConflict.rowCount > 0) {
+        if (requestedStageOrder === undefined) {
             const nextStage = await pool.query(
                 'SELECT COALESCE(MAX(stage_order), 0) + 1 AS next_stage_order FROM puzzles WHERE hunt_id = $1',
                 [puzzle.hunt_id]
             );
             puzzle.stage_order = nextStage.rows[0].next_stage_order;
+        } else if (!stageOrderIsValid) {
+            return res.status(400).json({ message: 'stage_order must be a positive integer.' });
         }
         if (!isValidPuzzleInput(puzzle)) {
             return res.status(400).json({
@@ -124,7 +122,7 @@ router.post('/puzzles', async (req, res) => {
 });
 
 async function updatePuzzle(req, res) {
-    const updates = req.body;
+    const updates = req.body || {};
     const fields = ['title', 'prompt_text', 'hint_text', 'validator_type', 'validation_target', 'stage_order'];
     const entries = fields.filter((field) => updates[field] !== undefined);
 
@@ -132,6 +130,15 @@ async function updatePuzzle(req, res) {
         return res.status(400).json({ message: 'At least one valid puzzle field is required.' });
     }
 
+    try {
+        const { rows: [existing] } = await pool.query('SELECT validator_type, validation_target FROM puzzles WHERE id = $1', [req.params.id]);
+        if (!existing) return res.status(404).json({ message: 'Puzzle not found.' });
+        if (!validTarget(updates.validator_type ?? existing.validator_type, updates.validation_target ?? existing.validation_target)) {
+            return res.status(400).json({ message: 'Invalid validator target.' });
+        }
+    } catch (error) {
+        return respondToPuzzleError(res, error, 'Failed to update puzzle.');
+    }
     const values = entries.map((field) => updates[field]);
     const assignments = entries.map((field, index) => `${field} = $${index + 1}`);
     values.push(req.params.id);
@@ -161,27 +168,38 @@ router.delete('/puzzles/:id', async (req, res) => {
         if (result.rowCount === 0) return res.status(404).json({ message: 'Puzzle not found.' });
         return res.status(204).send();
     } catch (error) {
-        return res.status(500).json({ message: 'Failed to delete puzzle.' });
+        return respondToPuzzleError(res, error, 'Failed to delete puzzle.');
     }
 });
 
 function isValidPuzzleInput(puzzle) {
     return puzzle
         && puzzle.hunt_id
-        && Number.isInteger(puzzle.stage_order)
-        && typeof puzzle.title === 'string'
-        && typeof puzzle.prompt_text === 'string'
+        && Number.isInteger(puzzle.stage_order) && puzzle.stage_order > 0
+        && typeof puzzle.title === 'string' && !!puzzle.title.trim() && puzzle.title.length <= 100
+        && typeof puzzle.prompt_text === 'string' && !!puzzle.prompt_text.trim()
         && validatorTypes.has(puzzle.validator_type)
-        && typeof puzzle.validation_target === 'string';
+        && typeof puzzle.validation_target === 'string' && !!puzzle.validation_target.trim()
+        && validTarget(puzzle.validator_type, puzzle.validation_target)
+        && (puzzle.hint_text == null || typeof puzzle.hint_text === 'string');
 }
 
 function hasValidPuzzleUpdates(updates, fields) {
     return fields.every((field) => {
-        if (field === 'stage_order') return Number.isInteger(updates[field]);
+        if (field === 'stage_order') return Number.isInteger(updates[field]) && updates[field] > 0;
         if (field === 'validator_type') return validatorTypes.has(updates[field]);
         if (field === 'hint_text') return updates[field] === null || typeof updates[field] === 'string';
-        return typeof updates[field] === 'string';
+        return typeof updates[field] === 'string' && !!updates[field].trim()
+            && (field !== 'title' || updates[field].length <= 100);
     });
+}
+
+function validTarget(type, target) {
+    if (type === 'HASH_SHA256') return /^[a-f0-9]{64}$/i.test(target);
+    if (type === 'REGEX') {
+        try { new RegExp(target); } catch { return false; }
+    }
+    return true;
 }
 
 function toPuzzleValues(puzzle) {
@@ -197,6 +215,9 @@ function toPuzzleValues(puzzle) {
 }
 
 function respondToPuzzleError(res, error, fallbackMessage) {
+    if (error.code === '22P02' || error.code === '23503' || error.code === '22001') {
+        return res.status(400).json({ message: 'Invalid puzzle or hunt fields.' });
+    }
     if (error.code === '23505') {
         return res.status(409).json({ message: 'That stage order already exists for this hunt.' });
     }

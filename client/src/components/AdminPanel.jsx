@@ -22,6 +22,7 @@ async function fetchPuzzles(token) {
     if (!response.ok) {
         const error = new Error(data.message || 'Unable to load puzzles.');
         error.response = { data };
+        error.status = response.status;
         throw error;
     }
     return data;
@@ -51,7 +52,14 @@ export default function AdminPanel() {
                 }
             })
             .catch((requestError) => {
-                if (!cancelled) setError(requestError.response?.data?.message || requestError.message);
+                if (!cancelled) {
+                    if (requestError.status === 401 || requestError.status === 403) {
+                        localStorage.removeItem(TOKEN_KEY);
+                        setToken(null);
+                        setPuzzles([]);
+                    }
+                    setError(requestError.response?.data?.message || requestError.message);
+                }
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);
@@ -91,7 +99,7 @@ export default function AdminPanel() {
     };
 
     const openCreate = () => {
-        const nextStageOrder = puzzles.length + 1;
+        const nextStageOrder = Math.max(0, ...puzzles.map((puzzle) => puzzle.stage_order)) + 1;
         setForm({ ...emptyPuzzle, hunt_id: huntId, stage_order: nextStageOrder });
         setMessage('');
         setError('');

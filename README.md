@@ -127,19 +127,20 @@ CREATE TABLE teams (
     "completed": false
   }
   ```
-- **`POST /join`**: The current implementation accepts
-  `{ "huntId": "...", "teamName": "..." }` to create or resume a team in an
-  active hunt. It does not currently accept the requested
-  `{ "team_name": "...", "access_code": "..." }` shape; `teamName` is used as
-  both the team name and generated access code.
+- **`POST /join`**: Accepts `{ "huntId": "...", "teamName": "..." }` to create a
+  team in an active hunt. Returns a random `accessCode` for future login.
+  Existing team names return 409; resume them through `/login` with their code.
 - **`GET /stage`** *(protected by Team JWT)*: Returns
   `{ stage_order, title, prompt_text, hint_text }` for the authenticated
-  team.
+  team, or `{ completed: true }` after completion. Deleted current stages
+  recover to the next existing stage; empty hunts return 404 without completion.
 - **`POST /submit`** *(protected by Team JWT)*: Accepts
   `{ "submission": "..." }`, `{ "answer": "..." }`, or `{ "input": "..." }`.
+  Every submission must also include `stage_order` from the displayed puzzle;
+  stale stage numbers return 409 to prevent duplicate submissions advancing twice.
   Evaluates the answer against the stage validator. On success, advances
   `current_stage_order` and returns
-  `{ success: true, completed: boolean }`.
+  `{ success: true, completed: boolean, currentStageOrder: number }`.
 
 ### Admin Routes (`/api/v1/admin`)
 
@@ -148,8 +149,8 @@ CREATE TABLE teams (
 - **`GET /puzzles`** *(protected by Admin JWT)*: Lists all stages and
   validation parameters for the selected or active hunt.
 - **`POST /puzzles`** *(protected by Admin JWT)*: Creates a stage. If
-  `hunt_id` or `stage_order` is omitted or conflicts, the active hunt and
-  next sequential stage number are used.
+  `hunt_id` or `stage_order` is omitted, the active hunt and next stage number
+  are used. Invalid stages return 400 and duplicates return 409.
 - **`PUT /puzzles/:id`** and **`PATCH /puzzles/:id`** *(protected by Admin
   JWT)*: Update stage parameters.
 - **`DELETE /puzzles/:id`** *(protected by Admin JWT)*: Removes a stage.
@@ -167,99 +168,87 @@ CREATE TABLE teams (
 
 ---
 
-## 5. Local Setup and Execution
+## 5. Local Docker Setup
 
-### Prerequisites
+Install Docker Engine with Compose. Bun 1.4.4 and Node.js 22 are used for local
+checks; Dockerfiles use Node.js 22 and npm for installation and builds.
 
-- Node.js v20+
-- PostgreSQL 16+ running locally on port 5432
+If you do not have a root .env, copy .env.example to .env. Keep your existing
+.env and database volume when updating. Set all variables in the template.
+POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DB must match an existing volume's
+credentials; changing these values does not update an existing PostgreSQL user.
+Use URL-safe database credentials, or percent-encode special characters in the
+DATABASE_URL expression in Compose. Never put secrets in VITE_API_URL; Vite
+includes that value in the public frontend build.
 
-### Database
+Run from the repository root:
 
 ```bash
-sudo -u postgres psql
-CREATE USER hunt_admin WITH PASSWORD 'devpassword123';
-CREATE DATABASE treasure_hunt OWNER hunt_admin;
-GRANT ALL PRIVILEGES ON DATABASE treasure_hunt TO hunt_admin;
-\q
+docker compose config --quiet
+docker compose up --build -d
+docker compose ps -a
+docker compose logs --tail=100 db-init backend frontend
+curl --fail http://localhost:5000/health
+curl --fail --head http://localhost:8080/
 ```
 
-### Backend
+Open http://localhost:8080/ for players and http://localhost:8080/admin for
+administration. The browser API remains http://localhost:5000. Rebuild the
+frontend after changing VITE_API_URL.
+
+A fresh database seeds admin username `admin` with ADMIN_PASSWORD, a sample
+hunt, and team code `HUNTER-001`. The initial puzzle answers are `go` and
+`2026`. Existing databases retain their accounts, passwords, puzzles and team
+progress; ADMIN_PASSWORD does not reset an existing account. A query failure
+or partial schema stops initialization without seeding.
+
+For the demonstration, log in as admin, create/edit/delete a test puzzle, then
+log in as a player and submit answers. Refresh after completion to verify the
+completion screen. A completed team remains completed when new stages are added.
+To test persistence without removing any data:
+
+```bash
+docker compose restart db backend frontend
+docker compose ps -a
+curl --fail http://localhost:5000/health
+```
+
+After services recover, confirm your puzzle edits and team progress remain.
+Do not remove the `postgres_data` volume.
+
+## 6. Local Checks and Development
 
 ```bash
 cd server
-npm install
-
-# Configure server/.env before starting:
-# DATABASE_URL=postgres://hunt_admin:devpassword123@localhost:5432/treasure_hunt
-# JWT_SECRET=super_secret_dev_key_12345
-# PORT=5000
-# NODE_ENV=development
-
-# Initialize schema and seed data (admin, sample puzzles, and initial team).
-node -r dotenv/config db/initDb.js
-
-# Run the API server.
-node -r dotenv/config index.js
+bun install --frozen-lockfile
+bun run test
+cd ../client
+bun install --frozen-lockfile
+bun run test
+bun run lint
+bun run build
 ```
 
-The seed creates the administrator `admin` with password `password123`, an
-active default hunt, the `First Signal` and `Final Lock` stages, and the
-`Shadow Monarchs` team with access code `HUNTER-001`.
+Backend regressions use an isolated in-memory PostgreSQL engine (PGlite), with
+serialized test connections. They never connect to your configured database.
+They verify application SQL and duplicate-request behavior; real PostgreSQL
+multi-connection locking and Docker persistence still require the Docker checks.
 
-### Frontend
-
-In a second terminal:
+For development outside Docker, supply DATABASE_URL, JWT_SECRET and
+ADMIN_PASSWORD to the backend environment. With a separate locally reachable
+PostgreSQL instance and the root .env configured for it:
 
 ```bash
+cd server
+bun --env-file=../.env run db:init
+bun --env-file=../.env run dev
+# In another terminal:
 cd client
-npm install
-npm run dev
+bun --env-file=../.env run dev
 ```
 
-Open:
+Compose does not publish the database port. The root template's localhost
+DATABASE_URL is for a separate host PostgreSQL instance; Compose supplies its
+own URL using the `db` service name.
 
-- Hunter Gate: <http://localhost:5173/> (access code: `HUNTER-001`)
-- Architect Console: <http://localhost:5173/admin> (user: `admin`, password:
-  `password123`)
-
----
-
-## 6. Project Progress and Roadmap
-
-The core application and Docker deployment configuration are implemented.
-The checklist reflects the current source and configuration; end-to-end
-runtime verification remains pending.
-
-### Application
-
-- [x] PostgreSQL schema and seed data for hunts, admins, puzzles, and teams.
-- [x] Team access-code login, JWT authentication, isolated progression, and
-  completion tracking.
-- [x] Server-side answer validation with all four validator strategies and
-  public-only puzzle fields in player responses.
-- [x] Architect login and puzzle creation, listing, editing, and deletion.
-- [x] Hunter and Architect interfaces at `/` and `/admin`.
-
-### Containerization and DevOps
-
-- [x] Express backend Dockerfile with production dependencies and a non-root
-  runtime user (currently a single-stage build).
-- [x] Multi-stage React frontend Dockerfile with Nginx static asset hosting
-  and `/api/` proxying to the backend.
-- [x] Unified `docker-compose.yml` with PostgreSQL 16, persistent database
-  storage, service health checks, ordered startup, and frontend ingress.
-- [x] One-shot database initialization that skips schema seeding when the
-  `admins` table exists and configures the admin password from `ADMIN_PASSWORD`.
-- [x] Root environment template (`.env..example`) and build-time frontend
-  API URL configuration through `VITE_API_URL`.
-- [ ] Multi-stage production Dockerfile for the Express backend.
-- [ ] CI/CD configuration for automated linting, schema validation, and image
-  builds.
-- [ ] End-to-end verification of the Compose stack, player progression,
-  admin workflows, and persistence across container restarts.
-
-The Compose stack currently sets `NODE_ENV=development` because the database
-client forces SSL in production mode, while the local PostgreSQL container
-uses a non-SSL connection. Production deployment still needs database SSL
-configuration appropriate to the target environment.
+See [AUDIT.md](AUDIT.md) for confirmed defects, verification results and limits.

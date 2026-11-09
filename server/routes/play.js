@@ -3,11 +3,13 @@ const pool = require('../db');
 const { requireTeam, issueToken } = require('../middleware/auth');
 const { validateSubmission } = require('../services/validator');
 
+const { loadTeamStage } = require('../services/progress');
+const { randomUUID } = require('crypto');
 const router = express.Router();
 const authenticateTeam = requireTeam;
 
 router.post('/login', async (req, res) => {
-    const { access_code: accessCode } = req.body;
+    const { access_code: accessCode } = req.body || {};
     if (typeof accessCode !== 'string' || !accessCode.trim()) {
         return res.status(400).json({ message: 'access_code is required.' });
     }
@@ -22,6 +24,9 @@ router.post('/login', async (req, res) => {
         );
         if (result.rowCount === 0) {
             return res.status(401).json({ message: 'Invalid access code.' });
+        }
+        if (result.rowCount > 1) {
+            return res.status(409).json({ message: 'Access code is ambiguous across active hunts. Ask the administrator for a unique code.' });
         }
 
         const team = result.rows[0];
@@ -41,9 +46,9 @@ router.post('/login', async (req, res) => {
 });
 
 router.post('/join', async (req, res) => {
-    const { huntId, teamName } = req.body;
+    const { huntId, teamName } = req.body || {};
 
-    if (!huntId || typeof teamName !== 'string' || !teamName.trim()) {
+    if (typeof huntId !== 'string' || !huntId || typeof teamName !== 'string' || !teamName.trim() || teamName.trim().length > 60) {
         return res.status(400).json({ message: 'huntId and teamName are required.' });
     }
 
@@ -58,12 +63,13 @@ router.post('/join', async (req, res) => {
 
         const teamResult = await pool.query(
             `INSERT INTO teams (hunt_id, access_code, team_name)
-             VALUES ($1, $2, $2)
-             ON CONFLICT (hunt_id, team_name) DO UPDATE SET updated_at = NOW()
-             RETURNING id, hunt_id, team_name, current_stage_order, is_completed`,
-            [huntId, teamName.trim()]
+             VALUES ($1, $2, $3)
+             ON CONFLICT (hunt_id, team_name) DO NOTHING
+             RETURNING id, hunt_id, team_name, access_code, current_stage_order, is_completed`,
+            [huntId, randomUUID(), teamName.trim()]
         );
         const team = teamResult.rows[0];
+        if (!team) return res.status(409).json({ message: 'Team already exists. Log in with its access code.' });
         const sessionToken = issueToken({
             role: 'team',
             sub: team.id,
@@ -72,6 +78,7 @@ router.post('/join', async (req, res) => {
 
         return res.json({
             sessionToken,
+            accessCode: team.access_code,
             teamId: team.id,
             huntId: team.hunt_id,
             teamName: team.team_name,
@@ -79,87 +86,77 @@ router.post('/join', async (req, res) => {
             completed: team.is_completed
         });
     } catch (error) {
+        if (error.code === '22P02') return res.status(400).json({ message: 'Invalid huntId.' });
         return res.status(500).json({ message: 'Failed to join hunt.' });
     }
 });
 
 router.get('/stage', authenticateTeam, async (req, res) => {
+    let client;
     try {
-        const result = await pool.query(
-            `SELECT p.stage_order, p.title, p.prompt_text, p.hint_text
-             FROM teams t
-             JOIN puzzles p ON p.hunt_id = t.hunt_id
-                AND p.stage_order = t.current_stage_order
-             WHERE t.id = $1 AND t.hunt_id = $2`,
-            [req.auth.teamId || req.auth.sub, req.auth.huntId]
-        );
-
-        if (result.rowCount === 0) {
-            return res.status(404).json({ message: 'No active stage found.' });
-        }
-
-        return res.json(result.rows[0]);
-    } catch (error) {
+        client = await pool.connect();
+        await client.query('BEGIN');
+        const { team, puzzle } = await loadTeamStage(client, req.auth.teamId || req.auth.sub, req.auth.huntId);
+        await client.query('COMMIT');
+        if (!team) return res.status(404).json({ message: 'Team not found.' });
+        if (team.is_completed) return res.json({ completed: true });
+        if (!puzzle) return res.status(404).json({ message: 'No active stage found. Ask the administrator to add a stage.' });
+        const { stage_order, title, prompt_text, hint_text } = puzzle;
+        return res.json({ stage_order, title, prompt_text, hint_text, completed: false });
+    } catch {
+        if (client) await client.query('ROLLBACK').catch(() => {});
         return res.status(500).json({ message: 'Failed to load current stage.' });
+    } finally {
+        client?.release();
     }
 });
 
 router.post('/submit', authenticateTeam, async (req, res) => {
-    const submission = req.body.submission ?? req.body.answer ?? req.body.input;
-    if (typeof submission !== 'string') {
-        return res.status(400).json({ message: 'submission must be a string.' });
+    const submission = req.body?.submission ?? req.body?.answer ?? req.body?.input;
+    const stageOrder = req.body?.stage_order;
+    if (typeof submission !== 'string' || !submission.trim() ||
+        (!Number.isInteger(stageOrder) || stageOrder <= 0)) {
+        return res.status(400).json({ message: 'A nonempty submission and valid stage_order are required.' });
     }
-
-    const client = await pool.connect();
+    let client;
     try {
+        client = await pool.connect();
         await client.query('BEGIN');
-        const puzzleResult = await client.query(
-            `SELECT p.validator_type, p.validation_target
-             FROM teams t
-             JOIN puzzles p ON p.hunt_id = t.hunt_id
-                AND p.stage_order = t.current_stage_order
-             WHERE t.id = $1 AND t.hunt_id = $2
-             FOR UPDATE OF t`,
-            [req.auth.teamId || req.auth.sub, req.auth.huntId]
-        );
-
-        if (puzzleResult.rowCount === 0) {
+        const teamId = req.auth.teamId || req.auth.sub;
+        const { team, puzzle } = await loadTeamStage(client, teamId, req.auth.huntId);
+        if (!team || (!team.is_completed && !puzzle)) {
             await client.query('ROLLBACK');
             return res.status(404).json({ message: 'No active stage found.' });
         }
-
-        const puzzle = puzzleResult.rows[0];
-        if (!validateSubmission(submission, puzzle.validator_type, puzzle.validation_target)) {
+        if (team.is_completed) {
+            await client.query('COMMIT');
+            return res.json({ success: true, completed: true });
+        }
+        if (stageOrder !== puzzle.stage_order) {
             await client.query('ROLLBACK');
+            return res.status(409).json({ message: 'Stage changed. Refresh to load the current puzzle.' });
+        }
+        if (!validateSubmission(submission, puzzle.validator_type, puzzle.validation_target)) {
+            await client.query('COMMIT');
             return res.json({ success: false, completed: false });
         }
-
-        const nextStageResult = await client.query(
-            `SELECT 1
-             FROM teams t
-             JOIN puzzles p ON p.hunt_id = t.hunt_id
-                AND p.stage_order = t.current_stage_order + 1
-             WHERE t.id = $1`,
-            [req.auth.teamId || req.auth.sub]
+        const { rows: [nextStage] } = await client.query(
+            'SELECT stage_order FROM puzzles WHERE hunt_id = $1 AND stage_order > $2 ORDER BY stage_order LIMIT 1 FOR SHARE',
+            [req.auth.huntId, puzzle.stage_order]
         );
-        const completed = nextStageResult.rowCount === 0;
-
+        const completed = !nextStage;
+        const currentStageOrder = nextStage?.stage_order ?? puzzle.stage_order;
         await client.query(
-            `UPDATE teams
-             SET current_stage_order = current_stage_order + 1,
-                 is_completed = $2,
-                 updated_at = NOW()
-             WHERE id = $1`,
-            [req.auth.teamId || req.auth.sub, completed]
+            'UPDATE teams SET current_stage_order = $2, is_completed = $3, updated_at = NOW() WHERE id = $1',
+            [teamId, currentStageOrder, completed]
         );
         await client.query('COMMIT');
-
-        return res.json({ success: true, completed });
-    } catch (error) {
-        await client.query('ROLLBACK');
+        return res.json({ success: true, completed, currentStageOrder });
+    } catch {
+        if (client) await client.query('ROLLBACK').catch(() => {});
         return res.status(500).json({ message: 'Failed to submit answer.' });
     } finally {
-        client.release();
+        client?.release();
     }
 });
 
