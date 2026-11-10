@@ -7,14 +7,16 @@ const adminRoutes = require('./routes/admin');
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.get('/health', async (_req, res) => {
+const healthHandler = async (_req, res) => {
     try {
         await require('./db').query('SELECT 1');
         res.json({ status: 'ok' });
     } catch {
         res.status(503).json({ status: 'unhealthy' });
     }
-});
+};
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 app.use('/api/v1/play', playRoutes);
 app.use('/api/v1/admin', adminRoutes);
 

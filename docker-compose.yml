@@ -50,11 +50,11 @@ services:
       db-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:5000/health', response => process.exit(response.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5000/health"]
       interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 10s
+      retries: 5
+      start_period: 20s
 
   frontend:
     build:

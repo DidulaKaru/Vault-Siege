@@ -6,8 +6,8 @@ RUN npm install --omit=dev --no-audit --no-fund
 
 FROM node:22-alpine
 WORKDIR /app
-COPY --from=dependencies /app/node_modules ./node_modules
 COPY --chown=node:node . .
+COPY --from=dependencies --chown=node:node /app/node_modules ./node_modules
 USER node
 EXPOSE 5000
 CMD ["node", "index.js"]
