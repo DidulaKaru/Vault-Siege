@@ -41,7 +41,20 @@ export const adminApi = {
     ),
     createPuzzle: (puzzle) => jsonRequest('/api/v1/admin/puzzles', 'POST', puzzle, ADMIN_TOKEN_KEY),
     updatePuzzle: (id, puzzle) => jsonRequest(`/api/v1/admin/puzzles/${id}`, 'PUT', puzzle, ADMIN_TOKEN_KEY),
-    deletePuzzle: (id) => request(`/api/v1/admin/puzzles/${id}`, { method: 'DELETE' }, ADMIN_TOKEN_KEY)
+    deletePuzzle: (id) => request(`/api/v1/admin/puzzles/${id}`, { method: 'DELETE' }, ADMIN_TOKEN_KEY),
+    teams: (huntId) => request(
+        huntId ? `/api/v1/admin/teams?hunt_id=${encodeURIComponent(huntId)}` : '/api/v1/admin/teams',
+        {},
+        ADMIN_TOKEN_KEY
+    ),
+    createTeam: (team) => jsonRequest('/api/v1/admin/teams', 'POST', team, ADMIN_TOKEN_KEY),
+    updateTeam: (id, updates) => jsonRequest(`/api/v1/admin/teams/${id}`, 'PATCH', updates, ADMIN_TOKEN_KEY),
+    deleteTeam: (id) => request(`/api/v1/admin/teams/${id}`, { method: 'DELETE' }, ADMIN_TOKEN_KEY),
+    progress: (huntId) => request(
+        huntId ? `/api/v1/admin/progress?hunt_id=${encodeURIComponent(huntId)}` : '/api/v1/admin/progress',
+        {},
+        ADMIN_TOKEN_KEY
+    )
 };
 
 export { ADMIN_TOKEN_KEY, PLAY_TOKEN_KEY };

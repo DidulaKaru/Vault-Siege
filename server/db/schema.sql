@@ -36,7 +36,9 @@ CREATE TABLE teams (
     team_name VARCHAR(60) NOT NULL,
     current_stage_order INT NOT NULL DEFAULT 1,
     is_completed BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
     CONSTRAINT uq_hunt_access_code UNIQUE(hunt_id, access_code),
     CONSTRAINT uq_hunt_team UNIQUE(hunt_id, team_name)
 );

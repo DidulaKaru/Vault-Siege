@@ -7,6 +7,18 @@ const pool = require('./index');
 const schemaPath = path.join(__dirname, 'schema.sql');
 
 async function seedDatabase(client) {
+    await client.query(`
+        ALTER TABLE teams ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+        ALTER TABLE teams ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+        CREATE TABLE IF NOT EXISTS submissions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+            stage_order INT NOT NULL,
+            submission_text TEXT NOT NULL,
+            is_correct BOOLEAN NOT NULL,
+            submitted_at TIMESTAMPTZ DEFAULT NOW()
+        );
+    `);
     const passwordHash = await bcrypt.hash('password123', 10);
     const adminResult = await client.query(
         `INSERT INTO admins (username, password_hash)
@@ -89,6 +101,18 @@ async function initDatabase() {
     try {
         await client.query('BEGIN');
         await client.query(schema);
+        await client.query(`
+            ALTER TABLE teams ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+            ALTER TABLE teams ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+            CREATE TABLE IF NOT EXISTS submissions (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                stage_order INT NOT NULL,
+                submission_text TEXT NOT NULL,
+                is_correct BOOLEAN NOT NULL,
+                submitted_at TIMESTAMPTZ DEFAULT NOW()
+            );
+        `);
         const seed = await seedDatabase(client);
         await client.query('COMMIT');
         console.log(`Database initialized. Seeded hunt ${seed.huntId} with ${seed.puzzleCount} puzzles.`);

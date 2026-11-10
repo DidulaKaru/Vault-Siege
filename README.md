@@ -251,7 +251,7 @@ runtime verification remains pending.
   storage, service health checks, ordered startup, and frontend ingress.
 - [x] One-shot database initialization that skips schema seeding when the
   `admins` table exists and configures the admin password from `ADMIN_PASSWORD`.
-- [x] Root environment template (`.env..example`) and build-time frontend
+- [x] Root environment template (`.env.example`) and build-time frontend
   API URL configuration through `VITE_API_URL`.
 - [ ] Multi-stage production Dockerfile for the Express backend.
 - [ ] CI/CD configuration for automated linting, schema validation, and image

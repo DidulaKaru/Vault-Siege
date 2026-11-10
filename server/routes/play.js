@@ -110,48 +110,67 @@ router.post('/submit', authenticateTeam, async (req, res) => {
         return res.status(400).json({ message: 'submission must be a string.' });
     }
 
+    const teamId = req.auth.teamId || req.auth.sub;
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         const puzzleResult = await client.query(
-            `SELECT p.validator_type, p.validation_target
+            `SELECT p.stage_order, p.validator_type, p.validation_target, t.is_completed
              FROM teams t
              JOIN puzzles p ON p.hunt_id = t.hunt_id
                 AND p.stage_order = t.current_stage_order
              WHERE t.id = $1 AND t.hunt_id = $2
              FOR UPDATE OF t`,
-            [req.auth.teamId || req.auth.sub, req.auth.huntId]
+            [teamId, req.auth.huntId]
         );
 
-        if (puzzleResult.rowCount === 0) {
+        if (puzzleResult.rowCount === 0 || puzzleResult.rows[0].is_completed) {
             await client.query('ROLLBACK');
             return res.status(404).json({ message: 'No active stage found.' });
         }
 
         const puzzle = puzzleResult.rows[0];
-        if (!validateSubmission(submission, puzzle.validator_type, puzzle.validation_target)) {
-            await client.query('ROLLBACK');
+        const isCorrect = validateSubmission(submission, puzzle.validator_type, puzzle.validation_target);
+
+        await client.query(
+            `INSERT INTO submissions (team_id, stage_order, submission_text, is_correct)
+             VALUES ($1, $2, $3, $4)`,
+            [teamId, puzzle.stage_order, submission, isCorrect]
+        );
+
+        if (!isCorrect) {
+            await client.query('COMMIT');
             return res.json({ success: false, completed: false });
         }
 
         const nextStageResult = await client.query(
-            `SELECT 1
-             FROM teams t
-             JOIN puzzles p ON p.hunt_id = t.hunt_id
-                AND p.stage_order = t.current_stage_order + 1
-             WHERE t.id = $1`,
-            [req.auth.teamId || req.auth.sub]
+            `SELECT stage_order FROM puzzles WHERE hunt_id = (SELECT hunt_id FROM teams WHERE id = $1) AND stage_order > (SELECT current_stage_order FROM teams WHERE id = $1) ORDER BY stage_order ASC LIMIT 1`,
+            [teamId]
         );
-        const completed = nextStageResult.rowCount === 0;
 
-        await client.query(
-            `UPDATE teams
-             SET current_stage_order = current_stage_order + 1,
-                 is_completed = $2,
-                 updated_at = NOW()
-             WHERE id = $1`,
-            [req.auth.teamId || req.auth.sub, completed]
-        );
+        const hasNextStage = nextStageResult.rowCount > 0;
+        const completed = !hasNextStage;
+
+        if (hasNextStage) {
+            const nextStageOrder = nextStageResult.rows[0].stage_order;
+            await client.query(
+                `UPDATE teams
+                 SET current_stage_order = $2,
+                     updated_at = NOW()
+                 WHERE id = $1`,
+                [teamId, nextStageOrder]
+            );
+        } else {
+            await client.query(
+                `UPDATE teams
+                 SET is_completed = true,
+                     completed_at = NOW(),
+                     updated_at = NOW()
+                 WHERE id = $1`,
+                [teamId]
+            );
+        }
+
         await client.query('COMMIT');
 
         return res.json({ success: true, completed });

@@ -165,6 +165,201 @@ router.delete('/puzzles/:id', async (req, res) => {
     }
 });
 
+// Teams Management & Progress Routes
+
+router.get('/teams', async (req, res) => {
+    try {
+        const huntId = req.query.hunt_id || (await pool.query(
+            'SELECT id FROM hunts WHERE is_active = true LIMIT 1'
+        )).rows[0]?.id;
+        if (!huntId) return res.status(404).json({ message: 'No active hunt found.' });
+
+        const result = await pool.query(
+            `SELECT 
+                t.id,
+                t.hunt_id,
+                t.team_name,
+                t.access_code,
+                t.current_stage_order,
+                t.is_completed,
+                t.created_at,
+                t.updated_at,
+                t.completed_at,
+                (SELECT COUNT(*) FROM puzzles WHERE hunt_id = t.hunt_id)::int AS total_stages
+             FROM teams t
+             WHERE t.hunt_id = $1
+             ORDER BY t.is_completed DESC, t.completed_at ASC NULLS LAST, t.current_stage_order DESC, t.team_name ASC`,
+            [huntId]
+        );
+
+        return res.json(result.rows);
+    } catch (error) {
+        console.error('Failed to load teams:', error);
+        return res.status(500).json({ message: 'Failed to load teams.' });
+    }
+});
+
+router.post('/teams', async (req, res) => {
+    const { team_name, access_code, hunt_id } = req.body;
+
+    if (
+        typeof team_name !== 'string' ||
+        !team_name.trim() ||
+        typeof access_code !== 'string' ||
+        !access_code.trim()
+    ) {
+        return res.status(400).json({
+            message: 'team_name and access_code are required strings.'
+        });
+    }
+
+    try {
+        const targetHuntId = hunt_id || (await pool.query(
+            'SELECT id FROM hunts WHERE is_active = true LIMIT 1'
+        )).rows[0]?.id;
+
+        if (!targetHuntId) {
+            return res.status(400).json({ message: 'No active hunt found.' });
+        }
+
+        const result = await pool.query(
+            `INSERT INTO teams (hunt_id, team_name, access_code, current_stage_order, is_completed)
+             VALUES ($1, $2, $3, 1, false)
+             RETURNING *`,
+            [targetHuntId, team_name.trim(), access_code.trim()]
+        );
+
+        return res.status(201).json(result.rows[0]);
+    } catch (error) {
+        if (error.code === '23505') {
+            return res.status(409).json({ message: 'A team with that name or access code already exists.' });
+        }
+        console.error('Failed to create team:', error);
+        return res.status(500).json({ message: 'Failed to create team.' });
+    }
+});
+
+router.patch('/teams/:id', async (req, res) => {
+    const { id } = req.params;
+    const { reset_progress, team_name, access_code } = req.body;
+
+    try {
+        const updates = [];
+        const values = [];
+        let paramIndex = 1;
+
+        if (reset_progress === true) {
+            updates.push('current_stage_order = 1');
+            updates.push('is_completed = false');
+            updates.push('completed_at = NULL');
+        }
+
+        if (typeof team_name === 'string' && team_name.trim().length > 0) {
+            updates.push(`team_name = $${paramIndex++}`);
+            values.push(team_name.trim());
+        }
+
+        if (typeof access_code === 'string' && access_code.trim().length > 0) {
+            updates.push(`access_code = $${paramIndex++}`);
+            values.push(access_code.trim());
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ message: 'No valid update fields provided.' });
+        }
+
+        updates.push('updated_at = NOW()');
+        values.push(id);
+
+        const query = `
+            UPDATE teams
+            SET ${updates.join(', ')}
+            WHERE id = $${paramIndex}
+            RETURNING *
+        `;
+
+        const result = await pool.query(query, values);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ message: 'Team not found.' });
+        }
+
+        return res.json(result.rows[0]);
+    } catch (error) {
+        if (error.code === '23505') {
+            return res.status(409).json({ message: 'A team with that name or access code already exists.' });
+        }
+        console.error('Failed to update team:', error);
+        return res.status(500).json({ message: 'Failed to update team.' });
+    }
+});
+
+router.delete('/teams/:id', async (req, res) => {
+    try {
+        const result = await pool.query('DELETE FROM teams WHERE id = $1 RETURNING id', [req.params.id]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ message: 'Team not found.' });
+        }
+        return res.json({ id: result.rows[0].id, message: 'Team deleted successfully.' });
+    } catch (error) {
+        console.error('Failed to delete team:', error);
+        return res.status(500).json({ message: 'Failed to delete team.' });
+    }
+});
+
+router.get('/progress', async (req, res) => {
+    try {
+        const huntId = req.query.hunt_id || (await pool.query(
+            'SELECT id FROM hunts WHERE is_active = true LIMIT 1'
+        )).rows[0]?.id;
+        if (!huntId) return res.status(404).json({ message: 'No active hunt found.' });
+
+        const stagesCountResult = await pool.query(
+            'SELECT COUNT(*)::int AS count FROM puzzles WHERE hunt_id = $1',
+            [huntId]
+        );
+        const total_stages = stagesCountResult.rows[0]?.count || 0;
+
+        const teamStatsResult = await pool.query(
+            `SELECT 
+                COUNT(*)::int AS total_teams,
+                COUNT(*) FILTER (WHERE is_completed = true)::int AS completed_teams,
+                COUNT(*) FILTER (WHERE is_completed = false)::int AS active_teams
+             FROM teams
+             WHERE hunt_id = $1`,
+            [huntId]
+        );
+        const { total_teams = 0, completed_teams = 0, active_teams = 0 } = teamStatsResult.rows[0] || {};
+
+        const stageBreakdownResult = await pool.query(
+            `SELECT 
+                p.stage_order,
+                p.title,
+                COUNT(t.id)::int AS team_count
+             FROM puzzles p
+             LEFT JOIN teams t ON t.hunt_id = p.hunt_id 
+                AND t.current_stage_order = p.stage_order 
+                AND t.is_completed = false
+             WHERE p.hunt_id = $1
+             GROUP BY p.stage_order, p.title
+             ORDER BY p.stage_order ASC`,
+            [huntId]
+        );
+
+        return res.json({
+            hunt_id: huntId,
+            total_teams: Number(total_teams),
+            active_teams: Number(active_teams),
+            completed_teams: Number(completed_teams),
+            total_stages: Number(total_stages),
+            completion_rate: total_teams > 0 ? Math.round((completed_teams / total_teams) * 100) : 0,
+            stage_breakdown: stageBreakdownResult.rows
+        });
+    } catch (error) {
+        console.error('Failed to get progress:', error);
+        return res.status(500).json({ message: 'Failed to load progress stats.' });
+    }
+});
+
 function isValidPuzzleInput(puzzle) {
     return puzzle
         && puzzle.hunt_id
