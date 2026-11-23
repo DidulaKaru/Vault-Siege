@@ -60,17 +60,4 @@ pipeline {
             }
         }
     }
-
-    post {
-        failure {
-            dir('repo') { sh 'docker compose logs --no-color --tail=100 || true' }
-        }
-        always {
-            dir('repo') {
-                // Stop everything and delete the DB volume so the next run starts clean.
-                sh 'docker compose down -v --remove-orphans || true'
-                sh 'rm -f .env'
-            }
-        }
-    }
 }
