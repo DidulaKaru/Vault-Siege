@@ -95,6 +95,34 @@ pipeline {
                 '''
             }
         }
+
+        stage('Push to Docker Hub') {
+            steps {
+                dir(env.REPO_DIR) {
+                    // 'dockerhub-creds' = Jenkins credential (username + access token).
+                    // Single quotes: the shell reads the secret, Groovy never sees it.
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
+                                                      usernameVariable: 'DH_USER',
+                                                      passwordVariable: 'DH_TOKEN')]) {
+                        sh '''
+                            set -e
+                            trap 'docker logout || true' EXIT
+
+                            echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
+
+                            for svc in backend frontend; do
+                                id=$(docker compose images -q "$svc")
+                                repo="$DH_USER/vault-siege-$svc"
+                                docker tag "$id" "$repo:$BUILD_NUMBER"
+                                docker tag "$id" "$repo:latest"
+                                docker push "$repo:$BUILD_NUMBER"
+                                docker push "$repo:latest"
+                            done
+                        '''
+                    }
+                }
+            }
+        }
     }
 
     post {
